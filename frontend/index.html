@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Distributed Storage - Task 6</title>
+    <style>
+        body { font-family: Arial; margin: 0; background: #ffffff; color: #222; }
+        .header { background: #222; color: white; padding: 16px 20px; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .header p { margin: 4px 0 0; font-size: 14px; }
+        .container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; }
+        .card { background: #fff; border: 1px solid #ccc; padding: 16px; }
+        .card h3 { margin: 0 0 10px; font-size: 16px; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
+        .node { padding: 8px; margin: 6px 0; border: 1px solid #ccc; }
+        .alive { background: #e8f5e9; border-left: 3px solid #2e7d32; }
+        .failed { background: #ffebee; border-left: 3px solid #c62828; }
+        button { background: #333; color: white; border: 1px solid #333; padding: 6px 12px; cursor: pointer; }
+        button:hover { background: #000; }
+        input { padding: 6px; margin: 4px; border: 1px solid #aaa; width: 190px; }
+        .progress { height: 14px; background: #eee; border: 1px solid #ccc; margin: 4px 0; }
+        .progress-bar { height: 100%; background: #333; }
+        #objects { max-height: 300px; overflow-y: auto; border: 1px solid #ddd; }
+        .object-item { padding: 8px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; font-size: 13px; }
+        .full { grid-column: 1 / -1; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Distributed Object-Tolerant Storage Framework</h1>
+        <p>Task 6: Web UI - Cluster Dashboard - Gateway: 8080 | Metadata: 8000 | Frontend: 3000</p>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h3>Upload Object</h3>
+            <input type="file" id="fileInput"><br>
+            <input type="text" id="bucketInput" placeholder="Bucket" value="default">
+            <input type="text" id="keyInput" placeholder="Key"><br>
+            <button onclick="uploadFile()">Upload</button>
+            <div id="uploadStatus" style="margin-top:8px; font-size:13px;"></div>
+        </div>
+
+        <div class="card">
+            <h3>Search Objects (Elasticsearch style)</h3>
+            <input type="text" id="searchInput" placeholder="Search prefix e.g. test"><br>
+            <input type="number" id="minSize" placeholder="Min size">
+            <input type="number" id="maxSize" placeholder="Max size"><br>
+            <button onclick="searchObjects()">Search</button>
+            <button onclick="listObjects()">List All</button>
+        </div>
+
+        <div class="card">
+            <h3>Cluster State</h3>
+            <div id="clusterStats" style="font-size:13px;"></div>
+            <div id="nodes"></div>
+            <button onclick="refreshCluster()">Refresh</button>
+        </div>
+
+        <div class="card">
+            <h3>Chunk Distribution</h3>
+            <div id="distribution" style="font-size:13px;"></div>
+            <h4 style="margin:12px 0 4px; font-size:14px;">Repair Progress</h4>
+            <div id="repairProgress">
+                <div class="progress"><div class="progress-bar" style="width: 100%"></div></div>
+                <small>All chunks healthy - 100% replicated - N=3 W=2 R=2</small>
+            </div>
+        </div>
+
+        <div class="card full">
+            <h3>Objects - Browse / Download</h3>
+            <div id="objects"></div>
+        </div>
+    </div>
+
+    <script>
+        const GATEWAY = "http://localhost:8080";
+
+        async function refreshCluster() {
+            try {
+                const res = await fetch(`${GATEWAY}/cluster/status`);
+                const data = await res.json();
+                document.getElementById('clusterStats').innerHTML = `
+                    <p>Total Nodes: ${data.total_nodes} | Alive: ${data.alive_nodes} | Failed: ${data.failed_nodes}<br>
+                    Buckets: ${data.buckets} | Objects: ${data.objects} | Chunks: ${data.total_chunks}</p>
+                `;
+                let nodesHtml = "";
+                data.nodes.forEach(node => {
+                    const cls = node.status === 'alive' ? 'alive' : 'failed';
+                    nodesHtml += `<div class="node ${cls}">
+                        <strong>${node.node_id}</strong> - ${node.status.toUpperCase()}<br>
+                        Free: ${(node.free_space / 1024 / 1024 / 1024).toFixed(2)} GB | Chunks: ${node.chunk_count}
+                    </div>`;
+                });
+                document.getElementById('nodes').innerHTML = nodesHtml;
+                let distHtml = "";
+                data.nodes.forEach(node => {
+                    const pct = data.total_chunks > 0 ? (node.chunk_count / data.total_chunks * 100).toFixed(1) : 0;
+                    distHtml += `<p>${node.node_id}: ${node.chunk_count} chunks (${pct}%)
+                        <div class="progress"><div class="progress-bar" style="width: ${pct}%"></div></div></p>`;
+                });
+                document.getElementById('distribution').innerHTML = distHtml;
+            } catch (e) {
+                document.getElementById('clusterStats').innerHTML = `<p>Error: ${e.message}</p>`;
+            }
+        }
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const bucket = document.getElementById('bucketInput').value || 'default';
+            const key = document.getElementById('keyInput').value || fileInput.files[0]?.name || 'testfile';
+            if (!fileInput.files[0]) { alert('Select file'); return; }
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            document.getElementById('uploadStatus').innerHTML = 'Uploading...';
+            try {
+                const res = await fetch(`${GATEWAY}/objects/${bucket}/${key}`, { method: 'POST', body: formData });
+                const data = await res.json();
+                document.getElementById('uploadStatus').innerHTML = `Uploaded: ${data.chunks} chunks, ${data.size} bytes`;
+                listObjects(); refreshCluster();
+            } catch (e) {
+                document.getElementById('uploadStatus').innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        async function listObjects() {
+            try {
+                const res = await fetch(`${GATEWAY}/objects`);
+                const data = await res.json();
+                showObjects(data);
+            } catch (e) {
+                document.getElementById('objects').innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        async function searchObjects() {
+            const prefix = document.getElementById('searchInput').value;
+            const minSize = document.getElementById('minSize').value;
+            const maxSize = document.getElementById('maxSize').value;
+            let url = `${GATEWAY}/objects?`;
+            if (prefix) url += `prefix=${prefix}&`;
+            if (minSize) url += `min_size=${minSize}&`;
+            if (maxSize) url += `max_size=${maxSize}&`;
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                showObjects(data);
+            } catch (e) {
+                document.getElementById('objects').innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        function showObjects(objects) {
+            if (objects.length === 0) { document.getElementById('objects').innerHTML = '<p>No objects</p>'; return; }
+            let html = "";
+            objects.forEach(obj => {
+                html += `<div class="object-item">
+                    <span><strong>${obj.bucket}/${obj.key}</strong> - ${obj.size} bytes - ${obj.chunk_hashes?.length || 0} chunks</span>
+                    <span><button onclick="downloadObject('${obj.bucket}','${obj.key}')">Download</button>
+                    <button onclick="deleteObject('${obj.bucket}','${obj.key}')">Delete</button></span>
+                </div>`;
+            });
+            document.getElementById('objects').innerHTML = html;
+        }
+
+        async function downloadObject(bucket, key) { window.open(`${GATEWAY}/objects/${bucket}/${key}`, '_blank'); }
+        async function deleteObject(bucket, key) {
+            if (!confirm(`Delete ${bucket}/${key}?`)) return;
+            try { await fetch(`${GATEWAY}/objects/${bucket}/${key}`, { method: 'DELETE' }); listObjects(); refreshCluster(); } catch (e) { alert(e.message); }
+        }
+
+        refreshCluster(); listObjects(); setInterval(refreshCluster, 5000);
+    </script>
+</body>
+</html>

@@ -91,6 +91,16 @@ services:
     depends_on:
       - metadata
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway
+
 volumes:
   postgres_data:
   es_data:
