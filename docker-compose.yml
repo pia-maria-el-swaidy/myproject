@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: storage_meta
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  elasticsearch:
+    image: elasticsearch:8.15.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  metadata:
+    build:
+      context: .
+      dockerfile: app/metadata/Dockerfile
+    container_name: metadata
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - elasticsearch
+
+  storage-node-1:
+    build:
+      context: .
+      dockerfile: app/storage_node/Dockerfile
+    container_name: storage-node-1
+    ports:
+      - "8001:8000"
+    volumes:
+      - node1_data:/data
+    environment:
+      - NODE_ID=storage-node-1
+
+  storage-node-2:
+    build:
+      context: .
+      dockerfile: app/storage_node/Dockerfile
+    container_name: storage-node-2
+    ports:
+      - "8002:8000"
+    volumes:
+      - node2_data:/data
+    environment:
+      - NODE_ID=storage-node-2
+
+  storage-node-3:
+    build:
+      context: .
+      dockerfile: app/storage_node/Dockerfile
+    container_name: storage-node-3
+    ports:
+      - "8003:8000"
+    volumes:
+      - node3_data:/data
+    environment:
+      - NODE_ID=storage-node-3
+
+  storage-node-4:
+    build:
+      context: .
+      dockerfile: app/storage_node/Dockerfile
+    container_name: storage-node-4
+    ports:
+      - "8004:8000"
+    volumes:
+      - node4_data:/data
+    environment:
+      - NODE_ID=storage-node-4
+
+  gateway:
+    build:
+      context: .
+      dockerfile: app/gateway/Dockerfile
+    container_name: gateway
+    ports:
+      - "8080:8000"
+    depends_on:
+      - metadata
+
+volumes:
+  postgres_data:
+  es_data:
+  node1_data:
+  node2_data:
+  node3_data:
+  node4_data:
