@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+httpx
+python-multipart
+pytest
+zfec
+fastcdc
+psycopg2-binary
+elasticsearch
+pyjwt
